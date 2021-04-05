@@ -5,7 +5,8 @@
 {-# LANGUAGE MultiParamTypeClasses, TypeFamilies, UndecidableInstances, GADTs #-}
 
 -- Advanced syntax extensions
-{-# LANGUAGE TemplateHaskell, QuasiQuotes, OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell, QuasiQuotes, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards, OverloadedStrings, ViewPatterns #-}
 
 {- |
     Module      :  Foundation
@@ -14,19 +15,19 @@
     Maintainer  :  work.a.mulik@gmail.com
     Portability :  non-portable
     
-    "Foundation" provides foundation type 'FPTalks' and handlers for all site
-    pages.
+    "Foundation" provides foundation type 'FPTalks', SQL and Auth support,
+    routes and handlers.
 -}
 module Foundation
 (
-  -- * Website
-  FPTalks (..), Handler, Widget,
+  -- * Export
+  module Yesod.Core,
   
-  -- ** Request handling
-  getMessengerR,
+  -- * Web
+  FPTalks (..), Handler, Widget, resourcesFPTalks,
   
-  -- ** DB definitions
-  User, UserId, migrateAll, resourcesFPTalks
+  -- * SQL
+  User, UserId, MessageId, GroupsId, migrateAll
 )
 where
 
@@ -34,7 +35,8 @@ where
 import Yesod.Persist.Core
 import Yesod.Auth.Email
 import Yesod.Auth
-import Yesod.Core
+
+import Yesod.Core hiding ( addMessage )
 import Yesod.Form
 
 import Decoration
@@ -46,44 +48,72 @@ import Database.Persist.TH
 
 -- Basics
 import Data.Typeable ( Typeable )
-import Data.Maybe    (  isJust  )
-import Data.Text     (   Text   )
+import Data.Coerce
+import Data.Maybe
+import Data.Text ( Text )
+import Data.Int
 
-import Control.Monad (   join   )
+import Text.Blaze ( ToMarkup (..) )
+
+import Control.Monad.Trans.Reader
+import Control.Monad ( void, join )
 
 default ()
 
 --------------------------------------------------------------------------------
 
-{- Routing and request handling. -}
-
 {-
-  Template-based (DSL) route generator.
+  Composite @DSL@:
   
-  Each line in this template is responsible for the path to the page(s) on the
-  site. In this case, two options for processing requests are used:
-  
-  * @/@ only allows @GET@ requests that are processed by the 'getMessengerR'
-  * @/auth/*@ is processed as a sub-site with own pages, requests and handlers,
-  which are implemented by the @yesod-auth@ and 'Yesod.Auth.Email' plugin.
+  * 'share' applies multiple @Template Haskell@ generators (first argument) to
+  one list of entity definitions (second argument) and embeds the generated code
+  into the module at compile time
+  * 'persistLowerCase' converts @QuasiQuoter@ to entity definitions for
+  @Template Haskell@ generators
+  * 'mkPersist' is a code generator that defines types representing records in
+  database tables
+  * 'mkMigrate' creates a function that rebuilds databases when their
+  corresponding definitions change.
 -}
-mkYesod "FPTalks" [parseRoutes|
-/     MessengerR GET
-/auth AuthR      Auth getAuth
+share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+User
+  email      Text
+  password   Text Maybe
+  verkey     Text Maybe
+  verified   Bool
+  UniqueUser email
+  deriving   Typeable
+
+Group
+  name  Text Maybe
+  count Int
+  deriving Typeable
+
+Groups
+  gid          GroupId
+  member       UserId
+  UniqueGroups gid member
+  deriving     Typeable
+
+Message
+  text      Text
+  sender    UserId
+  receivers GroupId
+  deriving  Typeable
 |]
 
--- | 'MessengerR' (<localhost:3000/>) @GET@ request handler.
-getMessengerR :: Handler Html
-getMessengerR =  defaultLayout $ do
-  let title = "FPTalks messenger page"
-  setTitle title
-  [whamlet|
-    <div#page-header>
-      <h1>#{title}
-      <p>Not implemented yet
-    <div#page-content>
-      <p.message-box>Content example
-  |]
+userField :: (Monad m, RenderMessage (HandlerSite m) FormMessage) => Field m UserId
+userField =  convertField toUserId fromUserId intField
+
+fromUserId :: UserId -> Int64
+fromUserId =  coerce
+
+toUserId :: Int64 -> UserId
+toUserId =  coerce
+
+--------------------------------------------------------------------------------
+
+instance ToMarkup UserId where toMarkup = toMarkup . fromUserId
 
 --------------------------------------------------------------------------------
 
@@ -93,11 +123,15 @@ getMessengerR =  defaultLayout $ do
   'FPTalks' is main site type, that represent whole web application. 'FPTalks'
   value contains @SQL@ connection representation.
 -}
-data FPTalks = FPTalks
-  {
-    -- | @persistent@ SQL backend.
-    sqlBackend :: SqlBackend
-  }
+data FPTalks = FPTalks {sqlBackend :: SqlBackend}
+
+{-
+  Template-based (DSL) route generator. Creates data type 'Route' 'FPTalks',
+  which represents site routes.
+-}
+mkYesodData "FPTalks" $(parseRoutesFile "fptalks.routes")
+
+--------------------------------------------------------------------------------
 
 {- |
   Website instance for 'FPTalks' type, defines basic web application behavior.
@@ -108,8 +142,12 @@ data FPTalks = FPTalks
 instance Yesod FPTalks
   where
     -- | Page access control.
-    isAuthorized (AuthR  _) _ = return Authorized
-    isAuthorized MessengerR _ = isUser
+    isAuthorized (AuthR        _) _ = return Authorized
+    isAuthorized (MessengerR gid) _ = do
+      uid  <- requireAuthId
+      auth <- runDB $ userInGroup uid gid
+      return $ if auth then Authorized else Unauthorized ""
+    isAuthorized         _        _ = isUser
     
     -- | The page to which the user will be redirected if he isn't logged in.
     authRoute _ = Just (AuthR LoginR)
@@ -133,11 +171,14 @@ instance Yesod FPTalks
     defaultLayout = customLayout
     
     -- | Converts an 'ErrorResponse' exception to an error page.
-    errorHandler = customErrorW
+    errorHandler  = customErrorW
 
 -- | The page is available only if the user is logged in.
 isUser :: Handler AuthResult
 isUser =  AuthenticationRequired `maybe` const Authorized <$> maybeAuthId
+
+userInGroup :: (MonadIO m) => UserId -> GroupId -> ReaderT SqlBackend m Bool
+userInGroup userId groupId = isJust <$> getBy (UniqueGroups groupId userId)
 
 --------------------------------------------------------------------------------
 
@@ -161,29 +202,6 @@ instance YesodPersist FPTalks
 -}
 instance YesodAuthPersist FPTalks
 
-{-
-  Composite @DSL@:
-  
-  * 'share' applies multiple @Template Haskell@ generators (first argument) to
-  one list of entity definitions (second argument) and embeds the generated code
-  into the module at compile time
-  * 'persistLowerCase' converts @QuasiQuoter@ to entity definitions for
-  @Template Haskell@ generators
-  * 'mkPersist' is a code generator that defines types representing records in
-  database tables
-  * 'mkMigrate' creates a function that rebuilds databases when their
-  corresponding definitions change.
--}
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-User
-  email    Text
-  password Text Maybe
-  verkey   Text Maybe
-  verified Bool
-  UniqueUser email
-  deriving Typeable
-|]
-
 --------------------------------------------------------------------------------
 
 {- Auth support. -}
@@ -200,7 +218,7 @@ instance YesodAuth FPTalks
     loginHandler = customLoginW
     authPlugins  = const [authEmail]
     logoutDest   = const (AuthR LoginR)
-    loginDest    = const MessengerR
+    loginDest    = const HomeR
     
     authenticate creds =
       let user = User (credsIdent creds) Nothing Nothing False
@@ -255,11 +273,163 @@ instance YesodAuthEmail FPTalks
 
 --------------------------------------------------------------------------------
 
-{- Internationalization stuff. -}
+{- Request handling. -}
+
+-- Template-based (DSL) route generator. Binds request handlers with routes.
+mkYesodDispatch "FPTalks" $(parseRoutesFile "fptalks.routes")
+
+-- | 'HomeR' (<localhost:3000/>) @GET@ request handler.
+getHomeR :: Handler Html
+getHomeR =  redirect ChatsR
+
+getChatsR :: Handler Html
+getChatsR =  do
+  messages <- runDB . topMessages =<< requireAuthId
+  defaultLayout $ do
+    setTitle "FPTalks | Chats"
+    [whamlet|
+    <header>
+      <h1>Chats
+      ^{navigateW}
+    <article>
+      <ul>
+        $forall Message{messageText, messageReceivers} <- messages
+          <li.message>
+            <a href=@{MessengerR messageReceivers}>#{messageText}
+    |]
+
+getSearchR :: Handler Html
+getSearchR =  do
+  thisUserId <- requireAuthId
+  users <- runDB $ getUsers thisUserId
+  (createW, encodeC) <- generateFormPost createChatForm
+  defaultLayout $ do
+    setTitle "FPTalks | User search"
+    [whamlet|
+    <header>
+      <h1>Users
+      ^{navigateW}
+    <article>
+      <ul>
+        $forall Entity userId User{userEmail} <- users
+          <li.user>
+            <form action=@{CreateChatR} method=post encode=#{encodeC}>
+              ^{createW userId}
+              <input.link.user type=submit value=#{userEmail}>
+    |]
+
+--------------------------------------------------------------------------------
+
+getMessengerR :: GroupId -> Handler Html
+getMessengerR groupId = do
+  messages <- runDB $ selectList [MessageReceivers ==. groupId] [Asc MessageId]
+  (sendW, enctypeS) <- generateFormPost sendMessageForm
+  defaultLayout $ do
+    setTitle "FPTalks | Messenger"
+    [whamlet|
+    <header>
+      ^{navigateW}
+      <h1>Messenger
+    <article>
+      <ul.hidden>
+        $forall Entity _ Message{messageText, messageSender} <- messages
+          <li.message>
+            <p.sender>#{messageSender}
+            <p.message>#{messageText}
+    <footer>
+      <form#messageForm.message-box method=post enctype=#{enctypeS} action=@{MessengerR groupId}>
+        ^{sendW}
+        <input#messageFormSubmit type=submit>
+    |]
+
+postMessengerR :: GroupId -> Handler ()
+postMessengerR groupId = do
+  userId <- requireAuthId
+  result <- fst . fst <$> runFormPost sendMessageForm
+  case result of
+    FormSuccess (Textarea text) -> void . runDB $ insert (Message text userId groupId)
+    _                           -> return ()
+  redirect (MessengerR groupId)
+
+sendMessageForm :: Html -> MForm Handler (FormResult Textarea, Widget)
+sendMessageForm =
+  let settings = ""
+        {
+          fsName  = Just "MessageText",
+          fsAttrs =
+            [
+              ("placeholder", "Write message..."),
+              ("class", "message-box"),
+              ("for", "messageForm")
+            ]
+        }
+  in  renderDivs $ areq textareaField settings Nothing
+
+--------------------------------------------------------------------------------
+
+postCreateChatR :: Handler ()
+postCreateChatR =  do
+  result <- fst . fst <$> runFormPost createChatForm
+  case result of
+    FormSuccess interlocId -> redirect . MessengerR =<< requireDialog interlocId
+    _                      -> redirect HomeR
+
+createChatForm :: Html -> MForm Handler (FormResult UserId, UserId -> Widget)
+createChatForm widget = do
+  userId <- fst <$> mreq userField (""{fsName = Just "userId"}) Nothing
+  return
+    (
+      userId,
+      \ publicId -> [whamlet|
+        <input type=number name=userId hidden value=#{publicId}>
+        ^{widget}
+      |]
+    )
+
+--------------------------------------------------------------------------------
 
 instance RenderMessage FPTalks FormMessage
   where
     renderMessage _ _ = defaultFormMessage
+
+--------------------------------------------------------------------------------
+
+navigateW :: Widget
+navigateW =  [whamlet|
+<nav>
+  <a href=@{ChatsR}>Chats
+  <a href=@{SearchR}>Users
+|]
+
+--------------------------------------------------------------------------------
+
+getUsers :: (MonadIO m) => UserId -> ReaderT SqlBackend m [Entity User]
+getUsers userId =  filter ((/= userId) . entityKey) <$> selectList [] []
+
+userGroups :: (MonadIO m) => UserId -> ReaderT SqlBackend m [GroupId]
+userGroups userId = map (groupsGid . entityVal) <$> selectList [GroupsMember==.userId] []
+
+topMessages :: (MonadIO m) => UserId -> ReaderT SqlBackend m [Message]
+topMessages userId = map entityVal <$> do
+  groups <- userGroups userId
+  selectList [MessageReceivers<-.groups] [Desc MessageId, LimitTo (length groups)]
+
+--------------------------------------------------------------------------------
+
+requireDialog :: UserId -> Handler GroupId
+requireDialog interlocId = do
+  userId <- requireAuthId
+  runDB $ do
+    groups <- userGroups userId
+    
+    let addDialog = do
+          gid <- insert (Group Nothing 2)
+          void $ insert (Groups gid interlocId)
+          void $ insert (Groups gid userId)
+          return gid
+    
+    maybe addDialog (return . groupsGid . entityVal) . listToMaybe
+      =<< selectList [GroupsMember==.interlocId, GroupsGid<-.groups] [LimitTo 1]
 
 
 

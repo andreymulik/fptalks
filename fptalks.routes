@@ -1,0 +1,7 @@
+/              HomeR       GET
+/new           CreateChatR POST
+/user          SearchR     GET
+/auth          AuthR       Auth getAuth
+
+/chat          ChatsR      GET
+/chat/#GroupId MessengerR  GET POST

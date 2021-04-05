@@ -17,7 +17,7 @@ module Decoration
   customLayout,
   
   -- ** Pages
-  messengerW, customErrorW, customLoginW, customEmailLoginW, customRegisterW,
+  customErrorW, customLoginW, customEmailLoginW, customRegisterW,
   customSetPasswordW
 )
 where
@@ -62,19 +62,6 @@ customLayout fptalksContentW = do
         ^{pageHead page}
       <body>
         ^{pageBody page}
-  |]
-
--- | Messanger page (not implemented yet).
-messengerW :: WidgetFor site ()
-messengerW =  do
-  let title = "FPTalks messenger page"
-  setTitle title
-  [whamlet|
-    <div#page-header>
-      <h1>#{title}
-      <p>Not implemented yet
-    <div#page-content>
-      <p.message-box>Content example
   |]
 
 --------------------------------------------------------------------------------
@@ -185,9 +172,9 @@ customLoginW =  do
     let title = "Log In"
     setTitle title
     [whamlet|
-      <div#page-header>
+      <header>
         <h1>#{title}
-      <div#page-content>
+      <article>
         ^{apLogin authEmail authR}
     |]
 
@@ -249,9 +236,9 @@ customRegisterW =  do
     authLayout $ do
       setTitle "Register"
       [whamlet|
-        <div#page-header>
+        <header>
           <h1>Register
-        <div#page-content>
+        <article>
           <div#registerForm.auth>
             <form method="post" action="@{toParentRoute registerR}" enctype=#{enctype}>
               ^{widget}
@@ -290,9 +277,9 @@ customSetPasswordW needOld = do
         (widget, enctype) <- generateFormPost setPasswordForm
         setTitleI SetPass
         [whamlet|
-          <div#page-header>
+          <header>
             <h1>_{SetPass}
-          <div#page-content>
+          <article>
             <div#setPasswordForm.auth>
               <form method="post" action="@{toParent setpassR}" enctype=#{enctype}>
                 ^{widget}
@@ -340,11 +327,14 @@ customMessageWidget :: (Yesod site) => Html -> Text -> WidgetFor site () -> Widg
 customMessageWidget title message content = do
   setTitle title
   [whamlet|
-    <div#page-header>
+    <header>
       <h1>#{title}
       <p>#{message}
-    <div#page-content>
+    <article>
       ^{content}
   |]
+
+
+
 
 

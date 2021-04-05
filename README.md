@@ -148,7 +148,7 @@ For more complex projects, you can use, for example, `nginx` or `apache`
 the reviewer doesn't need to delve into the logic of the actions being
 performed - it doesn't differ from the logic in the usual behavior of an `Yesod`
 application.
-* `Sendmail` provides mail sender (calls the `sendmail` utility with standard
+* `Sendmail` provides mail sender (calls the `sendmail` util with default
 parameters). If the verifier doesn't have `sendmail` or has problems with its
 configuration/use, the code starting from the line
 ```
