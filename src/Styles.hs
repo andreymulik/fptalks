@@ -19,20 +19,21 @@ default ()
 
 -- | Default styles.
 fptalksStyleW :: (Yesod site) => WidgetFor site ()
-fptalksStyleW =  do htmlStyleW; topStyleW; formStyleW; msgStyleW; parStyleW
+fptalksStyleW =  do htmlW; topW; formW; parW; accountW; msgW
 
 --------------------------------------------------------------------------------
 
 {- HTML document styles. -}
 
-htmlStyleW :: (Yesod site) => WidgetFor site ()
-htmlStyleW =  toWidgetHead [cassius|
+htmlW :: (Yesod site) => WidgetFor site ()
+htmlW =  toWidgetHead [cassius|
 *
   padding: 0
   margin:  0
 
 html
   background: white
+  min-width:  350px
   height:     100%
   width:      100%
 
@@ -56,11 +57,11 @@ body, input, input::placeholder, textarea, textarea::placeholder, .btn
 
 {- Top containers styles. -}
 
-topStyleW :: (Yesod site) => WidgetFor site ()
-topStyleW =  toWidgetHead [cassius|
+topW :: (Yesod site) => WidgetFor site ()
+topW =  toWidgetHead [cassius|
 header
   border-bottom: 5px solid rgba(69, 59, 97, 0.5)
-  background:    #5e5184
+  background:    #5E5184
   text-align:    center
   font-size:     1.2em
   position:      fixed
@@ -104,8 +105,8 @@ article, footer
 
 {- Form styles. -}
 
-formStyleW :: (Yesod site) => WidgetFor site ()
-formStyleW =  toWidgetHead [cassius|
+formW :: (Yesod site) => WidgetFor site ()
+formW =  toWidgetHead [cassius|
 .auth
   border-radius: 0.3em
   border:        1px solid #ddd
@@ -132,13 +133,13 @@ input
   margin-bottom: 5px
   inline-size:   99%
 
-input.user
-  color: #5E5184
-
-input[type=submit].link
+.link
   background-color: transparent
   text-align:       left
   border:           none
+
+input.link.user
+  text-align: center
 
 input, input::placeholder, .btn
   font-weight: bold
@@ -147,16 +148,24 @@ input, input::placeholder, .btn
 a
   text-decoration: none
 
-a:active, a:hover, input[type=submit].link
+a:active, a:hover, .link
   text-decoration: underline
+
+div.column
+  grid-template-column: 1fr
+  display:              grid
+
+input.name
+  font-weight: normal
+  border:      none
 |]
 
 --------------------------------------------------------------------------------
 
 {- Message styles. -}
 
-msgStyleW :: (Yesod site) => WidgetFor site ()
-msgStyleW =  toWidgetHead [cassius|
+msgW :: (Yesod site) => WidgetFor site ()
+msgW =  toWidgetHead [cassius|
 .message-box
   font-family: monospace
   white-space: pre
@@ -171,19 +180,6 @@ textarea
   overflow:   hidden
   outline:    none
   resize:     vertical
-|]
-
---------------------------------------------------------------------------------
-
-{- Paragraph styles. -}
-
-parStyleW :: (Yesod site) => WidgetFor site ()
-parStyleW =  toWidgetHead [cassius|
-p, pre
-  margin-inline-start: 0
-  margin-block-start:  0
-  margin-inline-end:   0
-  margin-block-end:    0
 
 ul
   list-style: none
@@ -202,7 +198,10 @@ p.message
   white-space:   pre
   overflow:      visible
 
-p.sender
+.user
+  color: #5E5184
+
+.small
   font-size: 70%
 
 #messageForm
@@ -213,5 +212,53 @@ p.sender
 
 #messageFormSubmit
   height: 100%
+
+.trash
+  background: url("/static/trash.png") no-repeat top left
+  border:     none
+  height:     20px
+  width:      20px
+  float:      right
+|]
+
+--------------------------------------------------------------------------------
+
+{- Account styles. -}
+
+accountW :: (Yesod site) => WidgetFor site ()
+accountW =  toWidgetHead [cassius|
+#accountBox
+  text-decoration: underline
+  font-weight:     bold
+  text-align:      center
+  min-width:       250px
+  max-width:       80px
+  color:           #5E5184
+  width:           50%
+  float:           left
+
+#userIcon
+  text-align: center
+  max-height: 250px
+  min-height: 80px
+  max-width:  250px
+  min-width:  80px
+  float:      bottom
+
+#userContacts
+  float: right
+|]
+
+--------------------------------------------------------------------------------
+
+{- Paragraph styles. -}
+
+parW :: (Yesod site) => WidgetFor site ()
+parW =  toWidgetHead [cassius|
+p, pre
+  margin-inline-start: 0
+  margin-block-start:  0
+  margin-inline-end:   0
+  margin-block-end:    0
 |]
 

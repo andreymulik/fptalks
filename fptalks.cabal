@@ -37,12 +37,16 @@ Library
     -- basics
     transformers,
     bytestring,
+    directory,
+    filepath,
     base,
     text,
     time,
     
     -- Web
     yesod-persistent,
+    clientsession,
+    yesod-static,
     yesod-core == 1.6.*,
     yesod-form,
     yesod-auth,
@@ -86,5 +90,4 @@ Executable fptalks
     yesod-core,
     fptalks,
     base
-
 

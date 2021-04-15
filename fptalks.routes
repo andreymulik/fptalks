@@ -1,7 +1,15 @@
-/              HomeR       GET
-/new           CreateChatR POST
-/user          SearchR     GET
-/auth          AuthR       Auth getAuth
+ /                     HomeR       GET
+ /user/list            UsersR      GET
+ /user/name            UserNameR   POST
+ /user/icons           UserIconR   POST
+ /user/icons/#UserId   IconR       GET
+!/user/#UserId         UserR       GET
 
-/chat          ChatsR      GET
-/chat/#GroupId MessengerR  GET POST
+ /auth                 AuthR       Auth   getAuth
+ /static               StaticR     Static getStatic
+
+ /chat                 ChatsR      GET
+ /chat/new             CreateChatR POST
+ /chat/leave           DelGroupR   POST
+!/chat/#GroupId        MessengerR  GET POST
+ /chat/#GroupId/delete DelMessageR POST
